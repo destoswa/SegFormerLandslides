@@ -1,0 +1,2 @@
+model_dir: "outputs/20251208_171627_5_epochs_b0_dataset_CAS_2500"
+data_dir: "data/inference/small_set"

@@ -1,4 +1,5 @@
 import os
+import json
 import torch
 from transformers import (
     AutoImageProcessor,
@@ -14,9 +15,11 @@ from utils.dataset import SegmentationDataset
 from utils.trainer import TrainValMetricsTrainer
 from utils.metrics import compute_metrics
 from utils.callbacks import PrinterCallback
+from utils.visualization import show_iou_per_class, show_loss_pa, show_mean_iou_dice
 
 
 def training_model(args):
+    OUTPUT_DIR = args.train.output_dir
     OUTPUT_SUFFIXE = args.train.output_suffixe
     VAL_SPLIT = args.train.val_split
     NUM_EPOCHS = args.train.num_epochs
@@ -27,9 +30,12 @@ def training_model(args):
     PRETRAINED_MODEL = args.train.pretrained_model
     DATASET_DIR = args.dataset.dataset_dir
 
-    OUTPUT_DIR = datetime.now().strftime(r"%Y%m%d_%H%M%S_") + OUTPUT_SUFFIXE
-    LOG_DIR = os.path.join(OUTPUT_DIR, 'logs')
+    RESULTS_DIR = os.path.join(OUTPUT_DIR, datetime.now().strftime(r"%Y%m%d_%H%M%S_") + f"{NUM_EPOCHS}_epochs_" + OUTPUT_SUFFIXE)
+    LOG_DIR = os.path.join(RESULTS_DIR, 'logs')
+    IMG_DIR = os.path.join(RESULTS_DIR, 'images')
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    os.makedirs(IMG_DIR, exist_ok=True)
 
     time_start = time()
 
@@ -58,19 +64,16 @@ def training_model(args):
         processor=processor
     )
 
-    # print("training set size: ", len(train_ds))
-
     # Split train/val
     split_idx = int(len(train_ds) * (1 - VAL_SPLIT))
     train_subset, val_subset = torch.utils.data.random_split(train_ds, [split_idx, len(train_ds) - split_idx])
-
 
     # ----------------------------------------------------------
     # 4) Training arguments
     # ----------------------------------------------------------
 
     training_args = TrainingArguments(
-        output_dir=OUTPUT_DIR,  # Where checkpoints and logs are saved
+        output_dir=RESULTS_DIR,  # Where checkpoints and logs are saved
         num_train_epochs=NUM_EPOCHS,        # Total number of epochs
         per_device_train_batch_size=BATCH_SIZE,      # Adjust according to your GPU memory
         per_device_eval_batch_size=BATCH_SIZE,
@@ -115,18 +118,27 @@ def training_model(args):
     # ----------------------------------------------------------
     # 6) Train
     # ----------------------------------------------------------
-    trainer.train()
+    output = trainer.train()
 
     # ----------------------------------------------------------
     # 7) Save final model
     # ----------------------------------------------------------
-    trainer.save_model(os.path.join(OUTPUT_DIR, "segformer_trained_model"))
-    processor.save_pretrained(os.path.join(OUTPUT_DIR, "segformer_trained_model"))
+    trainer.save_model(os.path.join(RESULTS_DIR, "segformer_trained_model"))
+    processor.save_pretrained(os.path.join(RESULTS_DIR, "segformer_trained_model"))
 
     # ----------------------------------------------------------
     # 8) Visualization
     # ----------------------------------------------------------
-    # visualization(trainer)
+    last_checkpoint_path = trainer.state.best_model_checkpoint or trainer.state.last_model_checkpoint
+    state_file = os.path.join(last_checkpoint_path, "trainer_state.json")
+    with open(state_file, "r") as f:
+        state = json.load(f)
+    history = state["log_history"]
+
+    show_loss_pa(history,os.path.join(IMG_DIR, 'loss_pa.png'), False, True)
+    show_mean_iou_dice(history,os.path.join(IMG_DIR, 'mean_iou_dice.png'), False, True)
+    show_iou_per_class(history,os.path.join(IMG_DIR, 'iou_per_class.png'), False, True)
+
 
 
     # Show duration of process
@@ -138,10 +150,10 @@ def training_model(args):
 
 
 if __name__ == "__main__":
-    print(torch.cuda.is_available())
+    # print(torch.cuda.is_available())
     conf_train = OmegaConf.load('./config/train.yaml')
     conf_dataset = OmegaConf.load('./config/dataset.yaml')
 
     args= OmegaConf.merge({"train":conf_train, "dataset":conf_dataset})
 
-    # training_model(args)
+    training_model(args)

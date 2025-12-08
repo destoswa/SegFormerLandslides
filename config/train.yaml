@@ -1,8 +1,9 @@
+output_dir: "outputs"
 output_suffixe: "b0_dataset_CAS_2500"
 val_split: 0.1
-num_epochs: 3
+num_epochs: 5
 batch_size: 8
-num_workers: 8
+num_workers: 4
 learning_rate: 5e-5
 weight_decay: 0.01
 pretrained_model: nvidia/segformer-b0-finetuned-ade-512-512
