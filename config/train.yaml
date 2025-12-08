@@ -1,0 +1,31 @@
+output_suffixe: "b0_dataset_CAS_2500"
+val_split: 0.1
+num_epochs: 3
+batch_size: 8
+num_workers: 8
+learning_rate: 5e-5
+weight_decay: 0.01
+pretrained_model: nvidia/segformer-b0-finetuned-ade-512-512
+
+
+# list of pretrained models:
+# nvidia/segformer-b0-finetuned-ade-512-512
+# nvidia/segformer-b0-finetuned-cityscapes-1024-1024
+# nvidia/segformer-b0-finetuned-cityscapes-512-1024
+# nvidia/segformer-b0-finetuned-cityscapes-640-1280
+# nvidia/segformer-b0-finetuned-cityscapes-768-768
+# nvidia/segformer-b1-finetuned-ade-512-512
+# nvidia/segformer-b1-finetuned-cityscapes-1024-1024
+# lsi55/ddpm-ema-nvidia-segformer-b1-finetuned-cityscapes-1024-1024
+# nvidia/segformer-b2-finetuned-cityscapes-1024-1024
+# nvidia/segformer-b2-finetuned-ade-512-512
+# nvidia/segformer-b3-finetuned-ade-512-512
+# nvidia/segformer-b3-finetuned-cityscapes-1024-1024
+# nvidia/segformer-b4-finetuned-ade-512-512
+# nvidia/segformer-b4-finetuned-cityscapes-1024-1024
+# nvidia/segformer-b5-finetuned-ade-640-640
+# nvidia/segformer-b5-finetuned-cityscapes-1024-1024
+# janakipanneerselvam/SegFormer_Sunlit_nvidia_mit-b5
+# janakipanneerselvam/SegFormer_Sunlit_nvidia_mit-b5_v2
+# janakipanneerselvam/SegFormer_Sunlit_nvidia_mit-b5_Almonds
+# janakipanneerselvam/Almond_SegFormer_Sunlit_nvidia_mit-b5

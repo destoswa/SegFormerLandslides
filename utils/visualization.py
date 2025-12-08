@@ -2,7 +2,6 @@ import os
 import json
 import matplotlib.pyplot as plt
 
-
 def visualize_training(run_dir):
     """
     Loads HuggingFace Trainer logs from a checkpoint folder and plots:
@@ -29,15 +28,16 @@ def visualize_training(run_dir):
 
     # Lists to fill
     train_loss = []
+    train_miou = []
     val_loss = []
     val_miou = []
-    val_miou_ep = []  # epoch index for plotting
+    val_miou_ep = [] 
     val_loss_ep = []
 
     # Per-class IoU (dynamic)
-    per_class_iou = {}  # {class_id: [iou_epoch1, iou_epoch2, ...]}
+    val_per_class_iou = {}  # {class_id: [iou_epoch1, iou_epoch2, ...]}
+    train_per_class_iou = {}  # {class_id: [iou_epoch1, iou_epoch2, ...]}
 
-    step_counter = 0
     epoch_counter = 0
 
     print(history)
@@ -45,9 +45,13 @@ def visualize_training(run_dir):
     # Parse log history
     for entry in history:
         # Training loss (logged every logging_steps)
-        if "loss" in entry:
-            train_loss.append(entry["loss"])
-            step_counter += 1
+        if "train_loss" in entry:
+            train_loss.append(entry["train_loss"])
+            # step_counter += 1
+
+        if "train_mean_iou" in entry:
+            train_miou.append(entry["train_mean_iou"])
+            # val_miou_ep.append(epoch_counter)
 
         # Validation metrics (logged every epoch)
         if "eval_mean_iou" in entry:
@@ -63,20 +67,25 @@ def visualize_training(run_dir):
         for key, value in entry.items():
             if key.startswith("eval_iou_class_"):
                 cls = int(key.split("_")[-1])
-                per_class_iou.setdefault(cls, [])
-                per_class_iou[cls].append(value)
+                val_per_class_iou.setdefault(cls, [])
+                val_per_class_iou[cls].append(value)
+            elif key.startswith("train_iou_class_"):
+                cls = int(key.split("_")[-1])
+                train_per_class_iou.setdefault(cls, [])
+                train_per_class_iou[cls].append(value)
 
     # -----------------------
     # Plot 1: Training Loss
     # -----------------------
     plt.figure(figsize=(14,5))
     plt.subplot(1, 2, 1)
-    plt.plot(train_loss)
+    plt.plot(train_loss, label='train')
 
-    x = range(0,len(train_loss),len(train_loss)//(len(val_loss)-1))
+    # x = range(0,len(train_loss),len(train_loss)//(len(val_loss)-1))
 
-    plt.plot(x, val_loss)
-    plt.title("Training Loss")
+    plt.plot(val_loss, label='val')
+    plt.title("Loss")
+    plt.legend()
     plt.xlabel("Logging Steps")
     plt.ylabel("Loss")
 
@@ -84,9 +93,10 @@ def visualize_training(run_dir):
     # Plot 2: Validation Mean IoU
     # -----------------------
     plt.subplot(1, 2, 2)
-    plt.plot(val_miou_ep, val_miou)
-    # plt.plot(train_Mio, val_miou)
-    plt.title("Validation Mean IoU")
+    plt.plot(val_miou_ep, train_miou, label='train')
+    plt.plot(val_miou_ep, val_miou, label='val')
+    plt.title("Mean IoU")
+    plt.legend()
     plt.xlabel("Epoch")
     plt.ylabel("Mean IoU")
 
@@ -105,22 +115,34 @@ def visualize_training(run_dir):
     # ------------------------------------------
     # Optional: Plot IoU per class in new figure
     # ------------------------------------------
-    if per_class_iou:
-        plt.figure(figsize=(8, 6))
-
-        mapping_class_names = {key: val for key,val in zip(per_class_iou.keys(), ['Background', 'Landslide'])}
-        for cls, values in per_class_iou.items():
+    if val_per_class_iou:
+        plt.figure(figsize=(14,5))
+        plt.subplot(1, 2, 1)
+        mapping_class_names = {key: val for key,val in zip(train_per_class_iou.keys(), ['Background', 'Landslide'])}
+        for cls, values in train_per_class_iou.items():
             plt.plot(values, label=mapping_class_names[cls])
+        plt.title("Training set")
 
-        plt.title("IoU Per Class (Validation)")
         plt.xlabel("Epoch")
         plt.ylabel("IoU")
         plt.legend()
-        plt.show()
 
+        plt.subplot(1, 2, 2)
+        mapping_class_names = {key: val for key,val in zip(val_per_class_iou.keys(), ['Background', 'Landslide'])}
+        for cls, values in val_per_class_iou.items():
+            plt.plot(values, label=mapping_class_names[cls])
+        plt.title("Validation set")
+
+        plt.xlabel("Epoch")
+        plt.ylabel("IoU")
+        plt.legend()
+
+        plt.suptitle("Mean IoU per class")
+        plt.tight_layout()
+        plt.show()
     print("Visualization complete!")
 
 
 if __name__ == "__main__":
-    src = r"D:\GitHubProjects\Terranum_repo\LandSlides\CustomSegFormer\segformer_output_2\checkpoint-11265"
+    src = r"D:\GitHubProjects\Terranum_repo\LandSlides\CustomSegFormer\segformer_output_50_epochs\checkpoint-14100"
     visualize_training(src)
