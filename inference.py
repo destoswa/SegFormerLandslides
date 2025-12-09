@@ -56,55 +56,63 @@ def predict_image(model, processor, image_path, device="cuda"):
     return pred_mask
 
 
-def run_inference(
-        model_dir,
-        data_dir,
-        device="cuda"
-):
+def run_inference(conf):
     """
     Runs inference on all images in a directory.
     """
-
+    # ----------------------------
+    # Load parameters
+    # ----------------------------
+    MODEL_DIR = conf.model_dir
+    DATA_DIR = conf.data_dir
+    SAVE_MASK_AS_IMG = conf.save_mask_as_img
+    DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
     # ----------------------------
     # Load best checkpoint
     # ----------------------------
-    ckpt_path = load_latest_checkpoint(model_dir)
+    ckpt_path = load_latest_checkpoint(MODEL_DIR)
 
     processor = AutoImageProcessor.from_pretrained(ckpt_path)
     model = SegformerForSemanticSegmentation.from_pretrained(ckpt_path)
-    model.to(device)
+    model.to(DEVICE)
     model.eval()
 
-    output_dir = os.path.join(data_dir, "predictions")
-    os.makedirs(output_dir, exist_ok=True)
+    OUTPUT_DIR = os.path.join(DATA_DIR, "predictions")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    OUTPUT_DIR_AS_IMG = os.path.join(OUTPUT_DIR, "images") if SAVE_MASK_AS_IMG else None
+    os.makedirs(OUTPUT_DIR_AS_IMG, exist_ok=True)
 
     # ----------------------------
     # Loop over images
     # ----------------------------
     exts = (".jpg", ".jpeg", ".png", ".tif", ".tiff")
-    image_list = [f for f in os.listdir(data_dir) if f.lower().endswith(exts)]
+    image_list = [f for f in os.listdir(DATA_DIR) if f.lower().endswith(exts)]
 
     if not image_list:
-        print("No images found in:", data_dir)
+        print("No images found in:", DATA_DIR)
         return
 
     print(f"[INFO] Running inference on {len(image_list)} images")
 
     for _, img_name in tqdm(enumerate(image_list), total=len(image_list), desc="Predicting"):
-        input_path = os.path.join(data_dir, img_name)
-        output_path = os.path.join(output_dir, img_name.replace(".jpg", ".png"))
+        input_path = os.path.join(DATA_DIR, img_name)
+        output_path = os.path.join(OUTPUT_DIR, ''.join(img_name.split('.')[:-1]) + ".tif")
 
-        mask = predict_image(model, processor, input_path, device=device)
-        pil_mask = Image.fromarray(mask.astype(np.uint8), mode="L")
+        mask = predict_image(model, processor, input_path, device=DEVICE)
+        pil_mask = Image.fromarray(mask.astype(np.uint8))
         pil_mask.save(output_path)
 
-        # print(f"Saved mask: {output_path}")
+        if SAVE_MASK_AS_IMG:
+            rgb_mask = np.zeros((mask.shape[0], mask.shape[1], 3))
+            rgb_mask[mask == 1] = 255
+            pil_rgb_mask = Image.fromarray(rgb_mask.astype(np.uint8))
+            pil_rgb_mask.save(os.path.join(OUTPUT_DIR_AS_IMG, img_name))
 
 
 if __name__ == "__main__":
-    args = OmegaConf.load('config/inference.yaml')
+    conf = OmegaConf.load('config/inference.yaml')
 
-    run_inference(
-        model_dir=args.model_dir,
-        data_dir=args.data_dir,
-    )
+    run_inference(conf)
+
+

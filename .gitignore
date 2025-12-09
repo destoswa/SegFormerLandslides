@@ -1,5 +1,7 @@
-.venv/*
-.venv_old/*
-data/*
-outputs/*
+.venv/
+.venv_old/
+data/
+outputs/
+results/
 *.pyc
+__pycache__/

@@ -1,6 +1,9 @@
 import os
 import json
+import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 def show_loss_pa(history, saving_loc, do_show=False, do_save=True):
     # Lists to fill
@@ -54,6 +57,7 @@ def show_loss_pa(history, saving_loc, do_show=False, do_save=True):
     
     if do_show:
         plt.show()
+    plt.clf()
 
 
 def show_mean_iou_dice(history, saving_loc, do_show=False, do_save=True):
@@ -109,6 +113,7 @@ def show_mean_iou_dice(history, saving_loc, do_show=False, do_save=True):
     
     if do_show:
         plt.show()
+    plt.clf()
     
 
 def show_iou_per_class(history, saving_loc, do_show=False, do_save=True):
@@ -159,11 +164,47 @@ def show_iou_per_class(history, saving_loc, do_show=False, do_save=True):
     
     if do_show:
         plt.show()
+    plt.clf()
+
+
+def show_confusion_matrix(saving_loc, conf_mat, class_labels, title="Confusion Matrix", do_save=True, do_show=False):
+    """
+        plots the confusion matrix as and image
+        :param saving_loc : location of saved image
+        :param y_true: list of the GT label of the models
+        :param y_pred: List of the predicted label of the models
+        :param class_labels: List of strings containing the label tags
+        :param epoch: number of the epoch of training which provided the results
+        :param do_save: saves the image
+        :param do_show: shows the image
+        :return: None (just plots)
+    """
+    
+    df_conf_mat = pd.DataFrame(conf_mat, index=class_labels, columns=class_labels)
+
+    fig = plt.figure()
+    sns.heatmap(df_conf_mat, annot=True, cmap=sns.color_palette("Blues", as_cmap=True))
+    ax = plt.gca()
+    ax.set_title(title)
+
+    plt.tight_layout()
+    plt.ylabel('True labels')
+    plt.xlabel('Predicted labels')
+    fig.tight_layout()
+
+    if do_save:
+        plt.savefig(saving_loc)
+        plt.savefig(saving_loc.split('.')[0] + '.eps', format='eps')
+
+    if do_show:
+        plt.show()
+
+    plt.clf()
 
 
 if __name__ == "__main__":
     src = r"outputs\20251208_162944_10_epochs_b0_dataset_CAS_2500\checkpoint-330"
-    # visualize_training(src)
+
     # Path to trainer_state.json
     state_file = os.path.join(src, "trainer_state.json")
     if not os.path.exists(state_file):

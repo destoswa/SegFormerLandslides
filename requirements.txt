@@ -10,7 +10,9 @@ tqdm
 scikit-learn
 opencv-python
 matplotlib
+seaborn
 Pillow
+geopandas
 albumentations
 yacs
 pyyaml

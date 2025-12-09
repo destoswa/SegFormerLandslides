@@ -1,12 +1,14 @@
-output_dir: "outputs"
-output_suffixe: "b0_dataset_CAS_2500"
+output_dir: "results/training"
+output_suffixe: test
 val_split: 0.1
-num_epochs: 5
+num_epochs: 1
 batch_size: 8
 num_workers: 4
 learning_rate: 5e-5
 weight_decay: 0.01
 pretrained_model: nvidia/segformer-b0-finetuned-ade-512-512
+save_preds_lbls: True
+num_samples_per_buffer: 1000  # if save_preds_lbls = True
 
 
 # list of pretrained models:

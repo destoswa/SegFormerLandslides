@@ -1,15 +1,33 @@
 import torch
+import numpy as np
 from transformers import Trainer
 from utils.metrics import compute_metrics
 
 
 class TrainValMetricsTrainer(Trainer):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, confmat_dir, confmat_buffer_size=1000, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         # Buffers for storing batch results during an epoch
         self.training_metrics = []
         self.training_losses = []
+        self.confmat_dir = confmat_dir
+        self.confmat = []
+        self.confmat_idx = 0
+        self.confmat_buffer_size = confmat_buffer_size
+
+    @staticmethod
+    def logits_to_preds(logits, height=512, width=512):
+        # Resize predictions to match label size
+        logits = torch.nn.functional.interpolate(
+            torch.tensor(logits),
+            size=(logits.shape[-2]*4, logits.shape[-1]*4),   # (H_lbl, W_lbl)
+            mode="bilinear",
+            align_corners=False
+        )
+
+        # Final predicted class mask
+        return logits.argmax(dim=1).cpu().numpy()  # (batch_size, H_lbl, W_lbl)
 
     def training_step(self, model, inputs, num_items_in_batch=None):
         # Standard HF forward pass
@@ -21,8 +39,23 @@ class TrainValMetricsTrainer(Trainer):
             logits = outputs.logits
             labels = inputs["labels"]
 
+        logits = logits.cpu().numpy()
+        labels = labels.cpu().numpy()
+        preds = self.logits_to_preds(logits)
+        # print(logits.shape)
+        # print(labels.shape)
+        # print(preds.shape)
+
         # Save them for end-of-epoch metrics
-        dict_for_metrics = {'predictions': logits.cpu(), "label_ids": labels.cpu()}
+        dict_for_metrics = {'predictions': preds, "label_ids": labels}
+        self.confmat.append(dict_for_metrics)
+        self.confmat_idx += 1
+
+        if len(self.confmat) * self.args.per_device_train_batch_size > self.confmat_buffer_size:
+            #TODO save and clear
+            pass
+
+
         metrics = compute_metrics(dict_for_metrics)
         self.training_metrics.append(metrics)
         self.training_losses.append(loss.cpu().detach().numpy())

@@ -32,10 +32,12 @@ def training_model(args):
 
     RESULTS_DIR = os.path.join(OUTPUT_DIR, datetime.now().strftime(r"%Y%m%d_%H%M%S_") + f"{NUM_EPOCHS}_epochs_" + OUTPUT_SUFFIXE)
     LOG_DIR = os.path.join(RESULTS_DIR, 'logs')
+    CONFMAT_DIR = os.path.join(LOG_DIR, "confmats")
     IMG_DIR = os.path.join(RESULTS_DIR, 'images')
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(RESULTS_DIR, exist_ok=True)
     os.makedirs(IMG_DIR, exist_ok=True)
+    os.makedirs(CONFMAT_DIR, exist_ok=True)
 
     time_start = time()
 
@@ -106,6 +108,7 @@ def training_model(args):
 
     # trainer = Trainer(
     trainer = TrainValMetricsTrainer(
+        confmat_dir=CONFMAT_DIR,
         model=model,
         args=training_args,
         train_dataset=train_subset,
@@ -118,7 +121,7 @@ def training_model(args):
     # ----------------------------------------------------------
     # 6) Train
     # ----------------------------------------------------------
-    output = trainer.train()
+    trainer.train()
 
     # ----------------------------------------------------------
     # 7) Save final model
@@ -138,8 +141,6 @@ def training_model(args):
     show_loss_pa(history,os.path.join(IMG_DIR, 'loss_pa.png'), False, True)
     show_mean_iou_dice(history,os.path.join(IMG_DIR, 'mean_iou_dice.png'), False, True)
     show_iou_per_class(history,os.path.join(IMG_DIR, 'iou_per_class.png'), False, True)
-
-
 
     # Show duration of process
     delta_time_loop = time() - time_start

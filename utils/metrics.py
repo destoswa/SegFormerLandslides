@@ -85,8 +85,8 @@ def compute_metrics(p):
         p.label_ids:   (batch_size, H_lbl, W_lbl)
         """
         if isinstance(p, dict):
-            preds = p['predictions'].cpu()  # raw logits
-            labels = p['label_ids'].cpu()   # ground-truth labels
+            preds = p['predictions']  # raw logits
+            labels = p['label_ids']   # ground-truth labels
         else:
             preds = p.predictions  # raw logits
             labels = p.label_ids   # ground-truth labels
@@ -108,3 +108,36 @@ def compute_metrics(p):
         metrics['mean_dice'] = compute_mean_dice(pred, labels, preds.shape[1])
 
         return metrics
+
+
+def confusion_matrix_numpy(y_true, y_pred, num_classes):
+    """
+    Computes a confusion matrix for segmentation (H×W arrays).
+
+    y_true : ndarray of shape (H, W)
+    y_pred : ndarray of shape (H, W)
+    num_classes : int, number of classes
+
+    Returns: ndarray (num_classes, num_classes)
+    """
+    mask = (y_true >= 0) & (y_true < num_classes)  # valid pixels only
+    y_true = y_true[mask].flatten()
+    y_pred = y_pred[mask].flatten()
+
+    cm = np.bincount(
+        num_classes * y_true + y_pred,
+        minlength=num_classes**2
+    ).reshape(num_classes, num_classes)
+
+    return cm
+
+
+def compute_cm_from_dict(dict_preds_lbls, num_classes=2):
+    cf = np.zeros((len(dict_preds_lbls), num_classes, num_classes))
+
+    for id_val, (preds, labels) in enumerate(dict_preds_lbls.values()):
+        cf[id_val, :,:] = confusion_matrix_numpy(labels, preds, 2)
+
+    cf = np.sum(cf, axis=0)
+
+    return cf
