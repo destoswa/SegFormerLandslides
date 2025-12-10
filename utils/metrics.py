@@ -138,6 +138,6 @@ def compute_cm_from_dict(dict_preds_lbls, num_classes=2):
     for id_val, (preds, labels) in enumerate(dict_preds_lbls.values()):
         cf[id_val, :,:] = confusion_matrix_numpy(labels, preds, 2)
 
-    cf = np.sum(cf, axis=0)
+    cf = np.sum(cf, axis=0, dtype=np.uint64)
 
     return cf

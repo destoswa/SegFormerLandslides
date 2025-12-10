@@ -1,14 +1,13 @@
 output_dir: "results/training"
-output_suffixe: test
+output_suffixe: Bern_and_Longxi_b0
 val_split: 0.1
-num_epochs: 1
+num_epochs: 50
 batch_size: 8
-num_workers: 4
+num_workers: 2
 learning_rate: 5e-5
 weight_decay: 0.01
 pretrained_model: nvidia/segformer-b0-finetuned-ade-512-512
-save_preds_lbls: True
-num_samples_per_buffer: 1000  # if save_preds_lbls = True
+# save_preds_lbls: True
 
 
 # list of pretrained models:

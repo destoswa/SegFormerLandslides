@@ -64,7 +64,6 @@ def predict_image(model, processor, image_path, device="cuda"):
 
 
 def dict_to_list(_dict):
-    # return [x for xs in xss for x in xs if isinstance(xs, list)]
     res_list = []
     col_names = ['filename']
     for id, (key, val) in enumerate(_dict.items()):

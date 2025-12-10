@@ -33,6 +33,7 @@ class SegmentationDataset(Dataset):
         # HF returns tensors with extra batch dim, we remove manually
         inputs["pixel_values"] = inputs["pixel_values"].squeeze(0)
         inputs["labels"] = inputs["labels"].squeeze(0)
+        inputs['filename'] = self.images[idx]
 
         return inputs
     

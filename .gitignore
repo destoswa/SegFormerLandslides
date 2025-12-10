@@ -1,5 +1,6 @@
 .venv/
 .venv_old/
+.vscode/
 data/
 outputs/
 results/

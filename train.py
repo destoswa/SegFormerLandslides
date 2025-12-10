@@ -12,11 +12,13 @@ from datetime import datetime
 from omegaconf import OmegaConf
 
 from utils.dataset import SegmentationDataset
-from utils.trainer import TrainValMetricsTrainer
+from utils.trainer import TrainValMetricsTrainer, collate_with_filename
 from utils.metrics import compute_metrics
-from utils.callbacks import PrinterCallback
+from utils.callbacks import MetricsCallback, SaveBestPredictionsCallback
 from utils.visualization import show_iou_per_class, show_loss_pa, show_mean_iou_dice
 
+# If batch size too big, fails instead of slowing down
+torch.cuda.set_per_process_memory_fraction(0.95)
 
 def training_model(args):
     OUTPUT_DIR = args.train.output_dir
@@ -33,6 +35,7 @@ def training_model(args):
     RESULTS_DIR = os.path.join(OUTPUT_DIR, datetime.now().strftime(r"%Y%m%d_%H%M%S_") + f"{NUM_EPOCHS}_epochs_" + OUTPUT_SUFFIXE)
     LOG_DIR = os.path.join(RESULTS_DIR, 'logs')
     CONFMAT_DIR = os.path.join(LOG_DIR, "confmats")
+    BESTPREDS_DIR = os.path.join(LOG_DIR, "best_preds")
     IMG_DIR = os.path.join(RESULTS_DIR, 'images')
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -44,17 +47,18 @@ def training_model(args):
     # ----------------------------------------------------------
     # 2) Load model + processor
     # ----------------------------------------------------------
+    num_classes = 2  # <-- change this to your dataset!
 
     processor = AutoImageProcessor.from_pretrained(PRETRAINED_MODEL, use_fast=True)
     model = SegformerForSemanticSegmentation.from_pretrained(
         PRETRAINED_MODEL,
+        num_labels=num_classes,
         ignore_mismatched_sizes=True  # <- Important for custom classes
     )
 
     # Set number of classes = your mask max label + 1
-    num_classes = 2  # <-- change this to your dataset!
-    model.decode_head.classifier = torch.nn.Conv2d(256, num_classes, kernel_size=1)
-    model.config.num_labels = num_classes
+    # model.decode_head.classifier = torch.nn.Conv2d(256, num_classes, kernel_size=1)
+    # model.config.num_labels = num_classes
 
 
     # ----------------------------------------------------------
@@ -69,6 +73,8 @@ def training_model(args):
     # Split train/val
     split_idx = int(len(train_ds) * (1 - VAL_SPLIT))
     train_subset, val_subset = torch.utils.data.random_split(train_ds, [split_idx, len(train_ds) - split_idx])
+    # print(train_subset[0]['filename'])
+    # quit()
 
     # ----------------------------------------------------------
     # 4) Training arguments
@@ -111,12 +117,20 @@ def training_model(args):
         confmat_dir=CONFMAT_DIR,
         model=model,
         args=training_args,
+        data_collator=collate_with_filename,
         train_dataset=train_subset,
         eval_dataset= val_subset,
         processing_class=processor,
         compute_metrics=compute_metrics,
     )
-    trainer.add_callback(PrinterCallback(trainer))
+    trainer.add_callback(MetricsCallback(
+        trainer=trainer,
+        cf_dir=CONFMAT_DIR,
+    ))
+    trainer.add_callback(SaveBestPredictionsCallback(
+        trainer=trainer,
+        save_dir=BESTPREDS_DIR
+    ))
 
     # ----------------------------------------------------------
     # 6) Train
