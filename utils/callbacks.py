@@ -1,12 +1,11 @@
 import os
 import numpy as np
 import pandas as pd
+import torch
 from PIL import Image
 from transformers import TrainerCallback
-from utils.visualization import show_confusion_matrix
+from .visualization import show_confusion_matrix
 
-# from transformers.utils import logging
-# logger = logging.get_logger(__name__)
 
 class MetricsCallback(TrainerCallback):
     def __init__(self, trainer, cf_dir):
@@ -79,9 +78,23 @@ class SaveBestPredictionsCallback(TrainerCallback):
     def on_evaluate(self, args, state, control, **kwargs):
         # Save evaluation predictions if best epoch and then clear it
         if state.best_metric == None or state.stateful_callbacks['TrainerControl']['args']['should_save']:
-            # for batch_id, batch in enumerate(self.trainer.eval_preds):
-            #     for sample_id in range(batch.shape[0]):
-            #         preds = batch[sample_id, ...]
             for filename, preds in self.trainer.eval_preds.items():
                 self.save_tif_from_array(self.save_dir, filename, preds)
         self.trainer.eval_preds.clear()
+
+
+class SavesCurrentStateCallback(TrainerCallback):
+    def __init__(self, last_checkpoint_dir, trainer):
+        self.trainer = trainer
+        self.checkpoint_dir = last_checkpoint_dir
+
+    def on_evaluate(self, args, state, control, **kwargs):
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+
+        self.trainer.save_model(self.checkpoint_dir, _internal_call=True)
+        self.trainer.state.save_to_json(os.path.join(self.checkpoint_dir, 'trainer_state.json'))
+        self.trainer._save_rng_state(self.checkpoint_dir)
+        torch.save(self.trainer.optimizer.state_dict(), os.path.join(self.checkpoint_dir, "optimizer.pt"))
+        torch.save(self.trainer.accelerator.scaler.state_dict(), os.path.join(self.checkpoint_dir, "scaler.pt"))
+        torch.save(self.trainer.lr_scheduler.state_dict(), os.path.join(self.checkpoint_dir, "scheduler.pt"))
+

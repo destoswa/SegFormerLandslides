@@ -1,1 +1,2 @@
-dataset_dir: 'data/dataset_Longxi_Bern'
+# dataset_dir: 'data/dataset_Longxi_Bern'
+dataset_dir: 'data/dataset_Longxi_small'

@@ -2,8 +2,10 @@ import torch
 import numpy as np
 import time
 from transformers import Trainer
-if __name__ != "__main__":
-    from utils.metrics import compute_metrics, compute_cm_from_dict
+from torch.utils.data import default_collate
+
+from .metrics import compute_metrics, compute_cm_from_dict
+
 
 # for evaluation_loop overwrite
 from transformers.integrations.deepspeed import deepspeed_init
@@ -11,8 +13,6 @@ from transformers.trainer_pt_utils import EvalLoopContainer, find_batch_size, It
 from transformers.trainer_utils import EvalPrediction, EvalLoopOutput, denumpify_detensorize, has_length
 from transformers.utils import logging
 logger = logging.get_logger(__name__)
-
-from torch.utils.data import default_collate
 
 
 def collate_with_filename(batch):
@@ -162,16 +162,23 @@ class TrainValMetricsTrainer(Trainer):
                 if batch_size is None:
                     batch_size = observed_batch_size
 
+            # -----------------------------
+            # ------- custom lines --------
+            # -----------------------------
+
             # Prediction step
             #   remove filename from the inputs before giving it to the model
             filenames = inputs['filename']
             inputs = {k:v for k,v in inputs.items() if k != 'filename'}
             losses, logits, labels = self.prediction_step(model, inputs, prediction_loss_only, ignore_keys=ignore_keys)
 
-            # split batches to add each sample
+            #   split batches to add each sample
             preds = self.logits_to_preds(logits)
             for sample_id in range(preds.shape[0]):
                 self.eval_preds[filenames[sample_id]] = preds[sample_id, ...]
+                
+            # -----------------------------
+            # -----------------------------
             
             main_input_name = getattr(self.model, "main_input_name", "input_ids")
             inputs_decode = (

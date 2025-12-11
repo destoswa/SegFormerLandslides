@@ -14,11 +14,12 @@ from omegaconf import OmegaConf
 from utils.dataset import SegmentationDataset
 from utils.trainer import TrainValMetricsTrainer, collate_with_filename
 from utils.metrics import compute_metrics
-from utils.callbacks import MetricsCallback, SaveBestPredictionsCallback
+from utils.callbacks import MetricsCallback, SaveBestPredictionsCallback, SavesCurrentStateCallback
 from utils.visualization import show_iou_per_class, show_loss_pa, show_mean_iou_dice
 
 # If batch size too big, fails instead of slowing down
 torch.cuda.set_per_process_memory_fraction(0.95)
+
 
 def training_model(args):
     OUTPUT_DIR = args.train.output_dir
@@ -32,11 +33,17 @@ def training_model(args):
     PRETRAINED_MODEL = args.train.pretrained_model
     DATASET_DIR = args.dataset.dataset_dir
 
+    RESUME_FROM_EXISTING = args.train.resume_from_existing
+    EXISTING_DIR_TO_RESUME_FROM = os.path.join(args.train.existing_dir, 'last_checkpoint') if RESUME_FROM_EXISTING else None
+
+    # Create architecture
     RESULTS_DIR = os.path.join(OUTPUT_DIR, datetime.now().strftime(r"%Y%m%d_%H%M%S_") + f"{NUM_EPOCHS}_epochs_" + OUTPUT_SUFFIXE)
     LOG_DIR = os.path.join(RESULTS_DIR, 'logs')
     CONFMAT_DIR = os.path.join(LOG_DIR, "confmats")
     BESTPREDS_DIR = os.path.join(LOG_DIR, "best_preds")
     IMG_DIR = os.path.join(RESULTS_DIR, 'images')
+    LAST_CHECKPOINT_DIR = os.path.join(RESULTS_DIR, 'last_checkpoint')
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(RESULTS_DIR, exist_ok=True)
     os.makedirs(IMG_DIR, exist_ok=True)
@@ -44,9 +51,7 @@ def training_model(args):
 
     time_start = time()
 
-    # ----------------------------------------------------------
-    # 2) Load model + processor
-    # ----------------------------------------------------------
+    # Load model + processor
     num_classes = 2  # <-- change this to your dataset!
 
     processor = AutoImageProcessor.from_pretrained(PRETRAINED_MODEL, use_fast=True)
@@ -56,14 +61,7 @@ def training_model(args):
         ignore_mismatched_sizes=True  # <- Important for custom classes
     )
 
-    # Set number of classes = your mask max label + 1
-    # model.decode_head.classifier = torch.nn.Conv2d(256, num_classes, kernel_size=1)
-    # model.config.num_labels = num_classes
-
-
-    # ----------------------------------------------------------
-    # 3) Create datasets + dataloaders
-    # ----------------------------------------------------------
+    # Create datasets + dataloaders
     train_ds = SegmentationDataset(
         image_dir=os.path.join(DATASET_DIR, "images"),
         mask_dir=os.path.join(DATASET_DIR, "masks"),
@@ -73,13 +71,8 @@ def training_model(args):
     # Split train/val
     split_idx = int(len(train_ds) * (1 - VAL_SPLIT))
     train_subset, val_subset = torch.utils.data.random_split(train_ds, [split_idx, len(train_ds) - split_idx])
-    # print(train_subset[0]['filename'])
-    # quit()
 
-    # ----------------------------------------------------------
-    # 4) Training arguments
-    # ----------------------------------------------------------
-
+    # Training arguments
     training_args = TrainingArguments(
         output_dir=RESULTS_DIR,  # Where checkpoints and logs are saved
         num_train_epochs=NUM_EPOCHS,        # Total number of epochs
@@ -93,7 +86,6 @@ def training_model(args):
         logging_strategy="steps",           # Log every N steps
         logging_steps=len(train_subset),    # Adjust for dataset size
         log_level="info",
-        # report_to=["tensorboard"],        # Can add "wandb" if desired
 
         # Checkpoints
         save_strategy="epoch",              # Save checkpoint at the end of each epoch
@@ -112,7 +104,6 @@ def training_model(args):
         disable_tqdm=False
     )
 
-    # trainer = Trainer(
     trainer = TrainValMetricsTrainer(
         confmat_dir=CONFMAT_DIR,
         model=model,
@@ -123,29 +114,19 @@ def training_model(args):
         processing_class=processor,
         compute_metrics=compute_metrics,
     )
-    trainer.add_callback(MetricsCallback(
-        trainer=trainer,
-        cf_dir=CONFMAT_DIR,
-    ))
-    trainer.add_callback(SaveBestPredictionsCallback(
-        trainer=trainer,
-        save_dir=BESTPREDS_DIR
-    ))
 
-    # ----------------------------------------------------------
-    # 6) Train
-    # ----------------------------------------------------------
-    trainer.train()
+    trainer.add_callback(MetricsCallback(trainer=trainer, cf_dir=CONFMAT_DIR))
+    trainer.add_callback(SaveBestPredictionsCallback(trainer=trainer, save_dir=BESTPREDS_DIR))
+    trainer.add_callback(SavesCurrentStateCallback(trainer=trainer, last_checkpoint_dir=LAST_CHECKPOINT_DIR))
 
-    # ----------------------------------------------------------
-    # 7) Save final model
-    # ----------------------------------------------------------
+    # Train
+    trainer.train(resume_from_checkpoint=EXISTING_DIR_TO_RESUME_FROM)
+
+    # Save final model
     trainer.save_model(os.path.join(RESULTS_DIR, "segformer_trained_model"))
     processor.save_pretrained(os.path.join(RESULTS_DIR, "segformer_trained_model"))
 
-    # ----------------------------------------------------------
-    # 8) Visualization
-    # ----------------------------------------------------------
+    # Visualization
     last_checkpoint_path = trainer.state.best_model_checkpoint or trainer.state.last_model_checkpoint
     state_file = os.path.join(last_checkpoint_path, "trainer_state.json")
     with open(state_file, "r") as f:
@@ -165,7 +146,6 @@ def training_model(args):
 
 
 if __name__ == "__main__":
-    # print(torch.cuda.is_available())
     conf_train = OmegaConf.load('./config/train.yaml')
     conf_dataset = OmegaConf.load('./config/dataset.yaml')
 
