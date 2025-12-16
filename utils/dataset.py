@@ -5,10 +5,12 @@ from PIL import Image
 
 
 class SegmentationDataset(Dataset):
-    def __init__(self, image_dir, mask_dir, processor):
+    def __init__(self, image_dir, mask_dir, processor, transform=None):
         self.image_dir = image_dir
         self.mask_dir = mask_dir
         self.processor = processor
+        self.transform = transform
+        self.name = "derp"
 
         self.images = sorted(os.listdir(image_dir))
         self.masks  = sorted(os.listdir(mask_dir))
@@ -22,11 +24,14 @@ class SegmentationDataset(Dataset):
         img_path = os.path.join(self.image_dir, self.images[idx])
         mask_path = os.path.join(self.mask_dir, self.masks[idx])
 
-        image = Image.open(img_path).convert("RGB")
-        mask = Image.open(mask_path)
+        image = np.array(Image.open(img_path).convert("RGB"))
+        mask = np.array(Image.open(mask_path)).astype("int64")
 
-        # Convert mask to integer labels
-        mask = np.array(mask).astype("int64")
+        # Apply augmentation
+        if self.transform is not None:
+            augmented = self.transform(image=image, mask=mask)
+            image = augmented["image"]
+            mask = augmented["mask"]
 
         inputs = self.processor(images=image, segmentation_maps=mask, return_tensors="pt")
 

@@ -167,7 +167,7 @@ def show_iou_per_class(history, saving_loc, do_show=False, do_save=True):
     plt.clf()
 
 
-def show_confusion_matrix(saving_loc, conf_mat, class_labels, title="Confusion Matrix", do_save=True, do_show=False):
+def show_confusion_matrix(saving_loc, conf_mat, class_labels, title="Confusion Matrix", do_show=False, do_save=True):
     """
         plots the confusion matrix as and image
         :param saving_loc : location of saved image
@@ -203,18 +203,33 @@ def show_confusion_matrix(saving_loc, conf_mat, class_labels, title="Confusion M
 
 
 if __name__ == "__main__":
-    src = r"outputs\20251208_162944_10_epochs_b0_dataset_CAS_2500\checkpoint-330"
+    # src = r"D:\GitHubProjects\Terranum_repo\LandSlides\segformerlandslides\results\training\20251215_080906_50_epochs_Bern_from_scratch\last_checkpoint"
 
-    # Path to trainer_state.json
-    state_file = os.path.join(src, "trainer_state.json")
-    if not os.path.exists(state_file):
-        raise FileNotFoundError(f"trainer_state.json not found in {src}")
+    # # Path to trainer_state.json
+    # state_file = os.path.join(src, "trainer_state.json")
+    # # print(os.path.basename(src))
+    # # quit()
+    # IMG_DIR = os.path.join(os.path.dirname(src), 'images')
+    # os.makedirs(IMG_DIR, exist_ok=True)
+    # with open(state_file, "r") as f:
+    #     state = json.load(f)
+    # history = state["log_history"]
 
-    # Load training state
+    # show_loss_pa(history,os.path.join(IMG_DIR, 'loss_pa.png'), False, True)
+    # show_mean_iou_dice(history,os.path.join(IMG_DIR, 'mean_iou_dice.png'), False, True)
+    # show_iou_per_class(history,os.path.join(IMG_DIR, 'iou_per_class.png'), False, True)
+
+    # last_checkpoint_path = trainer.state.best_model_checkpoint or trainer.state.last_model_checkpoint
+    last_checkpoint_path = r"D:\GitHubProjects\Terranum_repo\LandSlides\segformerlandslides\results\training\20251215_162829_50_epochs_Bern_from_pretrained\last_checkpoint"
+    IMG_DIR = r"D:\GitHubProjects\Terranum_repo\LandSlides\segformerlandslides\results\training\20251215_162829_50_epochs_Bern_from_pretrained\images"
+    state_file = os.path.join(last_checkpoint_path, "trainer_state.json")
+    
     with open(state_file, "r") as f:
         state = json.load(f)
-
     history = state["log_history"]
-    # print(history[-1])
-    show_mean_iou_dice(history)
-    # show_iou_per_class(history)
+
+    do_show = True
+    do_save = False
+    show_loss_pa(history,os.path.join(IMG_DIR, 'loss_pa.png'), do_show, do_save)
+    show_mean_iou_dice(history,os.path.join(IMG_DIR, 'mean_iou_dice.png'), do_show, do_save)
+    show_iou_per_class(history,os.path.join(IMG_DIR, 'iou_per_class.png'), do_show, do_save)

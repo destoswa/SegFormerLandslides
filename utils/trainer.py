@@ -62,7 +62,7 @@ class TrainValMetricsTrainer(Trainer):
             logits = outputs.logits
             labels = inputs["labels"]
 
-        logits = logits.detach().cpu().numpy().astype(np.uint8)
+        logits = logits.detach().cpu().numpy()
         labels = labels.detach().cpu().numpy().astype(np.uint8)
         preds = self.logits_to_preds(logits).astype(np.uint8)
 

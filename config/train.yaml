@@ -2,14 +2,18 @@ output_dir: "results/training"
 output_suffixe: test
 # output_suffixe: Bern_and_Longxi_b0
 val_split: 0.1
-num_epochs: 7
+num_epochs: 20
 batch_size: 8
 num_workers: 2
 learning_rate: 5e-5
 weight_decay: 0.01
 
+from_pretrain: False
+pretrain_dir: results/training/segformer_output_50_epochs
 resume_from_existing: False
-existing_dir: "results/training/20251211_152736_5_epochs_test"
+existing_dir: 
+
+do_data_augmentation: True
 
 pretrained_model: nvidia/segformer-b0-finetuned-ade-512-512
 # save_preds_lbls: True

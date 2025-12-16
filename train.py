@@ -6,7 +6,10 @@ from transformers import (
     SegformerForSemanticSegmentation,
     TrainingArguments,
 )
+import albumentations as A
 import numpy as np
+
+import pandas as pd
 from time import time
 from datetime import datetime
 from omegaconf import OmegaConf
@@ -15,10 +18,22 @@ from utils.dataset import SegmentationDataset
 from utils.trainer import TrainValMetricsTrainer, collate_with_filename
 from utils.metrics import compute_metrics
 from utils.callbacks import MetricsCallback, SaveBestPredictionsCallback, SavesCurrentStateCallback
-from utils.visualization import show_iou_per_class, show_loss_pa, show_mean_iou_dice
+from utils.visualization import show_iou_per_class, show_loss_pa, show_mean_iou_dice, show_confusion_matrix
 
 # If batch size too big, fails instead of slowing down
 torch.cuda.set_per_process_memory_fraction(0.95)
+
+def get_best_checkpoint(training_dir):
+    print(training_dir)
+    print(os.listdir(training_dir))
+    lst_checkpoints = [x for x in os.listdir(training_dir) if 'checkpoint' in x and os.path.isdir(os.path.join(training_dir, x))]
+    print(lst_checkpoints)
+
+    lst_steps = [int(x.split('-')[-1]) for x in lst_checkpoints]
+    best_step = np.max(lst_steps)
+    best_checkpoint = [x for x in lst_checkpoints if str(best_step) in x][0]
+
+    return os.path.join(training_dir, best_checkpoint)
 
 
 def training_model(args):
@@ -33,9 +48,18 @@ def training_model(args):
     PRETRAINED_MODEL = args.train.pretrained_model
     DATASET_DIR = args.dataset.dataset_dir
 
-    RESUME_FROM_EXISTING = args.train.resume_from_existing
-    EXISTING_DIR_TO_RESUME_FROM = os.path.join(args.train.existing_dir, 'last_checkpoint') if RESUME_FROM_EXISTING else None
+    FROM_PRETRAIN = args.train.from_pretrain
+    PRETRAIN_DIR = args.train.pretrain_dir
 
+    RESUME_FROM_EXISTING = args.train.resume_from_existing
+    EXISTING_DIR_TO_RESUME_FROM = args.train.existing_dir if RESUME_FROM_EXISTING else None
+
+    try:
+        assert FROM_PRETRAIN + RESUME_FROM_EXISTING < 2
+    except:
+        raise AttributeError("PARAMETERS 'train.from_pretrain' and 'train.resume_from_existing' can not be both set to True!!!")
+
+    DO_DATA_AUGMENTATION = args.train.do_data_augmentation
     # Create architecture
     RESULTS_DIR = os.path.join(OUTPUT_DIR, datetime.now().strftime(r"%Y%m%d_%H%M%S_") + f"{NUM_EPOCHS}_epochs_" + OUTPUT_SUFFIXE)
     LOG_DIR = os.path.join(RESULTS_DIR, 'logs')
@@ -54,6 +78,8 @@ def training_model(args):
     # Load model + processor
     num_classes = 2  # <-- change this to your dataset!
 
+    if FROM_PRETRAIN:
+        PRETRAINED_MODEL = get_best_checkpoint(PRETRAIN_DIR)
     processor = AutoImageProcessor.from_pretrained(PRETRAINED_MODEL, use_fast=True)
     model = SegformerForSemanticSegmentation.from_pretrained(
         PRETRAINED_MODEL,
@@ -61,16 +87,40 @@ def training_model(args):
         ignore_mismatched_sizes=True  # <- Important for custom classes
     )
 
-    # Create datasets + dataloaders
-    train_ds = SegmentationDataset(
+    # Defining a transform for data augmentation
+    train_transform = A.Compose([
+        A.HorizontalFlip(p=0.5),
+        A.VerticalFlip(p=0.5),
+        A.RandomRotate90(p=0.5),
+    ])
+
+    full_dataset_train = SegmentationDataset(
         image_dir=os.path.join(DATASET_DIR, "images"),
         mask_dir=os.path.join(DATASET_DIR, "masks"),
-        processor=processor
+        processor=processor,
+        transform=None
     )
 
-    # Split train/val
-    split_idx = int(len(train_ds) * (1 - VAL_SPLIT))
-    train_subset, val_subset = torch.utils.data.random_split(train_ds, [split_idx, len(train_ds) - split_idx])
+    full_dataset_val = SegmentationDataset(
+        image_dir=os.path.join(DATASET_DIR, "images"),
+        mask_dir=os.path.join(DATASET_DIR, "masks"),
+        processor=processor,
+        transform=None
+    )
+
+    split_idx = int(len(full_dataset_train) * (1 - VAL_SPLIT))
+
+    train_indices, val_indices = torch.utils.data.random_split(
+        range(len(full_dataset_train)),
+        [split_idx, len(full_dataset_train) - split_idx],
+        generator=torch.Generator().manual_seed(42)
+    )
+
+    train_subset = torch.utils.data.Subset(full_dataset_train, train_indices.indices)
+    val_subset   = torch.utils.data.Subset(full_dataset_val, val_indices.indices)
+
+    if DO_DATA_AUGMENTATION:        
+        train_subset.dataset.transform = train_transform
 
     # Training arguments
     training_args = TrainingArguments(
@@ -116,7 +166,7 @@ def training_model(args):
     )
 
     trainer.add_callback(MetricsCallback(trainer=trainer, cf_dir=CONFMAT_DIR))
-    trainer.add_callback(SaveBestPredictionsCallback(trainer=trainer, save_dir=BESTPREDS_DIR))
+    trainer.add_callback(SaveBestPredictionsCallback(trainer=trainer, save_dir=BESTPREDS_DIR, dataset_dir=DATASET_DIR))
     trainer.add_callback(SavesCurrentStateCallback(trainer=trainer, last_checkpoint_dir=LAST_CHECKPOINT_DIR))
 
     # Train
@@ -127,8 +177,8 @@ def training_model(args):
     processor.save_pretrained(os.path.join(RESULTS_DIR, "segformer_trained_model"))
 
     # Visualization
-    last_checkpoint_path = trainer.state.best_model_checkpoint or trainer.state.last_model_checkpoint
-    state_file = os.path.join(last_checkpoint_path, "trainer_state.json")
+    state_file = os.path.join(LAST_CHECKPOINT_DIR, "trainer_state.json")
+    
     with open(state_file, "r") as f:
         state = json.load(f)
     history = state["log_history"]
@@ -136,6 +186,27 @@ def training_model(args):
     show_loss_pa(history,os.path.join(IMG_DIR, 'loss_pa.png'), False, True)
     show_mean_iou_dice(history,os.path.join(IMG_DIR, 'mean_iou_dice.png'), False, True)
     show_iou_per_class(history,os.path.join(IMG_DIR, 'iou_per_class.png'), False, True)
+
+    # Save best results
+    best_step = trainer.state.best_global_step
+    best_results = [x for x in history if x['step'] == best_step]
+    assert len(best_results) == 2
+    dict_best_results = best_results[0]
+    for key, val in best_results[1].items():
+        if key not in ["epoch", "step"]:
+            dict_best_results[key] = val
+    with open(os.path.join(RESULTS_DIR, 'best_results.json'), 'w') as f:
+        json.dump(dict_best_results, f, indent=2)
+
+    # Save best confidence matrix
+    src_best_cm = os.path.join(CONFMAT_DIR, f"confusion_matrix_ep_{int(dict_best_results['epoch'])}.csv")
+    if os.path.exists(src_best_cm):
+        conf_mat = pd.read_csv(src_best_cm, sep=';', index_col=0).values
+        sum_for_recall = np.sum(conf_mat, axis=1).reshape(-1, 1)
+        sum_for_precision = np.sum(conf_mat, axis=0).reshape(1, -1)
+        show_confusion_matrix(os.path.join(IMG_DIR, 'confusion_matrix.png'), conf_mat, ['Background', 'Landslide'])
+        show_confusion_matrix(os.path.join(IMG_DIR, 'confusion_matrix_recall.png'), conf_mat / sum_for_recall, ['Background', 'Landslide'], "Confusion Matrix - Producer accuracy")
+        show_confusion_matrix(os.path.join(IMG_DIR, 'confusion_matrix_precision.png'), conf_mat / sum_for_precision, ['Background', 'Landslide'], "Confusion Matrix - User accuracy")
 
     # Show duration of process
     delta_time_loop = time() - time_start
@@ -146,6 +217,7 @@ def training_model(args):
 
 
 if __name__ == "__main__":
+
     conf_train = OmegaConf.load('./config/train.yaml')
     conf_dataset = OmegaConf.load('./config/dataset.yaml')
 

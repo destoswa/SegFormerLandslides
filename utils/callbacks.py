@@ -1,4 +1,5 @@
 import os
+import shutil
 import numpy as np
 import pandas as pd
 import torch
@@ -38,7 +39,7 @@ class MetricsCallback(TrainerCallback):
             conf_mat=self.trainer.confmat,
             class_labels=['Background', 'Landslide'],
             )
-        pd.DataFrame(self.trainer.confmat, index=[0,1], columns=[0,1]).to_csv(os.path.join(self.cf_dir_val, f"confusion_matrix_ep_{state.epoch - 1}.csv"), sep=';')
+        pd.DataFrame(self.trainer.confmat, index=[0,1], columns=[0,1]).to_csv(os.path.join(self.cf_dir_val, f"confusion_matrix_ep_{int(state.epoch - 1)}.csv"), sep=';')
 
         # Clear buffers for next epoch
         self.trainer.training_metrics.clear()
@@ -49,27 +50,29 @@ class MetricsCallback(TrainerCallback):
 
 
 class SaveBestPredictionsCallback(TrainerCallback):
-    def __init__(self, trainer, save_dir):
+    def __init__(self, trainer, save_dir, dataset_dir):
         self.trainer = trainer
         self.save_dir = save_dir
+        self.dataset_dir = dataset_dir
         os.makedirs(self.save_dir, exist_ok=True)
         self.best_metric = None   # track manually
+        self.first_time_saving = True
 
     @staticmethod
     def save_tif_from_array(src, filename, arr):
-        src_images = os.path.join(src, "images")
-        src_masks = os.path.join(src, "masks")
-        os.makedirs(src_images, exist_ok=True)
-        os.makedirs(src_masks, exist_ok=True)
+        src_preds = os.path.join(src, "preds")
+        src_bin = os.path.join(src, "bin")
+        os.makedirs(src_preds, exist_ok=True)
+        os.makedirs(src_bin, exist_ok=True)
 
-        src_image_file = os.path.join(src_images, filename)
-        src_mask_file = os.path.join(src_masks, filename)
+        src_image_file = os.path.join(src_preds, filename)
+        src_mask_file = os.path.join(src_bin, filename)
 
         # Saving binary mask
         pil_mask = Image.fromarray(arr.astype(np.uint8))
         pil_mask.save(src_mask_file)
 
-        # Saving rgb versino of mask
+        # Saving rgb version of mask
         rgb_mask = np.zeros((arr.shape[0], arr.shape[1], 3))
         rgb_mask[arr == 1] = 255
         pil_rgb_mask = Image.fromarray(rgb_mask.astype(np.uint8))
@@ -80,6 +83,25 @@ class SaveBestPredictionsCallback(TrainerCallback):
         if state.best_metric == None or state.stateful_callbacks['TrainerControl']['args']['should_save']:
             for filename, preds in self.trainer.eval_preds.items():
                 self.save_tif_from_array(self.save_dir, filename, preds)
+
+                # saving also images and labels if first time
+                if self.first_time_saving:
+                    src_images = os.path.join(self.save_dir, 'images')
+                    src_labels = os.path.join(self.save_dir, 'labels')
+
+                    os.makedirs(src_images, exist_ok=True)
+                    os.makedirs(src_labels, exist_ok=True)
+
+                    shutil.copyfile(
+                        os.path.join(self.dataset_dir, 'images', filename), 
+                        os.path.join(src_images, filename),
+                        )
+                    shutil.copyfile(
+                        os.path.join(self.dataset_dir, 'labels', filename), 
+                        os.path.join(src_labels, filename),
+                        )
+                    
+        self.first_time_saving = False
         self.trainer.eval_preds.clear()
 
 
