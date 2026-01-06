@@ -1,6 +1,7 @@
 import os
 import json
 import torch
+from torch.utils.data import Subset, random_split
 from transformers import (
     AutoImageProcessor,
     SegformerForSemanticSegmentation,
@@ -37,7 +38,7 @@ def get_best_checkpoint(training_dir):
 
 
 def training_model(args):
-    OUTPUT_DIR = args.train.output_dir
+    OUTPUT_DIR = rf"{args.train.output_dir}"
     OUTPUT_SUFFIXE = args.train.output_suffixe
     VAL_SPLIT = args.train.val_split
     NUM_EPOCHS = args.train.num_epochs
@@ -47,6 +48,9 @@ def training_model(args):
     WEIGHT_DECAY = args.train.weight_decay
     PRETRAINED_MODEL = args.train.pretrained_model
     DATASET_DIR = args.dataset.dataset_dir
+    TRAINING_SET_DIR = args.dataset.trainset_dir
+    VALIDATION_SET_DIR = args.dataset.valset_dir
+    DATASET_MODE = args.dataset.mode
 
     FROM_PRETRAIN = args.train.from_pretrain
     PRETRAIN_DIR = args.train.pretrain_dir
@@ -60,6 +64,7 @@ def training_model(args):
         raise AttributeError("PARAMETERS 'train.from_pretrain' and 'train.resume_from_existing' can not be both set to True!!!")
 
     DO_DATA_AUGMENTATION = args.train.do_data_augmentation
+    
     # Create architecture
     RESULTS_DIR = os.path.join(OUTPUT_DIR, datetime.now().strftime(r"%Y%m%d_%H%M%S_") + f"{NUM_EPOCHS}_epochs_" + OUTPUT_SUFFIXE)
     LOG_DIR = os.path.join(RESULTS_DIR, 'logs')
@@ -73,17 +78,19 @@ def training_model(args):
     os.makedirs(IMG_DIR, exist_ok=True)
     os.makedirs(CONFMAT_DIR, exist_ok=True)
 
+    # save config
+    with open(os.path.join(RESULTS_DIR, 'config.json'), 'w') as f:
+        OmegaConf.save(args, f)
+
     time_start = time()
 
     # Load model + processor
-    num_classes = 2  # <-- change this to your dataset!
-
     if FROM_PRETRAIN:
         PRETRAINED_MODEL = get_best_checkpoint(PRETRAIN_DIR)
     processor = AutoImageProcessor.from_pretrained(PRETRAINED_MODEL, use_fast=True)
     model = SegformerForSemanticSegmentation.from_pretrained(
         PRETRAINED_MODEL,
-        num_labels=num_classes,
+        num_labels=2,
         ignore_mismatched_sizes=True  # <- Important for custom classes
     )
 
@@ -93,34 +100,52 @@ def training_model(args):
         A.VerticalFlip(p=0.5),
         A.RandomRotate90(p=0.5),
     ])
+    if DATASET_MODE == 'auto':
+        full_dataset_train = SegmentationDataset(
+            image_dir=os.path.join(DATASET_DIR, "images"),
+            mask_dir=os.path.join(DATASET_DIR, "masks"),
+            processor=processor,
+            transform=None
+        )
 
-    full_dataset_train = SegmentationDataset(
-        image_dir=os.path.join(DATASET_DIR, "images"),
-        mask_dir=os.path.join(DATASET_DIR, "masks"),
-        processor=processor,
-        transform=None
-    )
+        full_dataset_val = SegmentationDataset(
+            image_dir=os.path.join(DATASET_DIR, "images"),
+            mask_dir=os.path.join(DATASET_DIR, "masks"),
+            processor=processor,
+            transform=None
+        )
 
-    full_dataset_val = SegmentationDataset(
-        image_dir=os.path.join(DATASET_DIR, "images"),
-        mask_dir=os.path.join(DATASET_DIR, "masks"),
-        processor=processor,
-        transform=None
-    )
+        split_idx = int(len(full_dataset_train) * (1 - VAL_SPLIT))
 
-    split_idx = int(len(full_dataset_train) * (1 - VAL_SPLIT))
+        train_indices, val_indices = random_split(
+            range(len(full_dataset_train)),
+            [split_idx, len(full_dataset_train) - split_idx],
+            generator=torch.Generator().manual_seed(42)
+        )
 
-    train_indices, val_indices = torch.utils.data.random_split(
-        range(len(full_dataset_train)),
-        [split_idx, len(full_dataset_train) - split_idx],
-        generator=torch.Generator().manual_seed(42)
-    )
+        train_subset = Subset(full_dataset_train, train_indices.indices)
+        val_subset   = Subset(full_dataset_val, val_indices.indices)
+    elif DATASET_MODE == 'split':
+        train_subset = SegmentationDataset(
+            image_dir=os.path.join(TRAINING_SET_DIR, "images"),
+            mask_dir=os.path.join(TRAINING_SET_DIR, "masks"),
+            processor=processor,
+            transform=None
+        )
+        val_subset = SegmentationDataset(
+            image_dir=os.path.join(VALIDATION_SET_DIR, "images"),
+            mask_dir=os.path.join(VALIDATION_SET_DIR, "masks"),
+            processor=processor,
+            transform=None
+        )
+    else:
+        raise AttributeError("DATASET MODE NOT CORRECT in dataset.yaml")
 
-    train_subset = torch.utils.data.Subset(full_dataset_train, train_indices.indices)
-    val_subset   = torch.utils.data.Subset(full_dataset_val, val_indices.indices)
-
-    if DO_DATA_AUGMENTATION:        
-        train_subset.dataset.transform = train_transform
+    if DO_DATA_AUGMENTATION:
+        if isinstance(train_subset, Subset):
+            train_subset.dataset.transform = train_transform
+        else:
+            train_subset.transform = train_transform
 
     # Training arguments
     training_args = TrainingArguments(
@@ -199,7 +224,7 @@ def training_model(args):
         json.dump(dict_best_results, f, indent=2)
 
     # Save best confidence matrix
-    src_best_cm = os.path.join(CONFMAT_DIR, f"confusion_matrix_ep_{int(dict_best_results['epoch'])}.csv")
+    src_best_cm = os.path.join(CONFMAT_DIR, 'values', f"confusion_matrix_ep_{int(dict_best_results['epoch']-1)}.csv")
     if os.path.exists(src_best_cm):
         conf_mat = pd.read_csv(src_best_cm, sep=';', index_col=0).values
         sum_for_recall = np.sum(conf_mat, axis=1).reshape(-1, 1)
@@ -207,6 +232,10 @@ def training_model(args):
         show_confusion_matrix(os.path.join(IMG_DIR, 'confusion_matrix.png'), conf_mat, ['Background', 'Landslide'])
         show_confusion_matrix(os.path.join(IMG_DIR, 'confusion_matrix_recall.png'), conf_mat / sum_for_recall, ['Background', 'Landslide'], "Confusion Matrix - Producer accuracy")
         show_confusion_matrix(os.path.join(IMG_DIR, 'confusion_matrix_precision.png'), conf_mat / sum_for_precision, ['Background', 'Landslide'], "Confusion Matrix - User accuracy")
+    else:
+        print("CONFMAT NOT CREATED FOR BEST EPOCH")
+        print("following does not exist:")
+        print(src_best_cm)
 
     # Show duration of process
     delta_time_loop = time() - time_start

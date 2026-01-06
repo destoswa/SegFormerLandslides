@@ -203,6 +203,21 @@ def show_confusion_matrix(saving_loc, conf_mat, class_labels, title="Confusion M
 
 
 if __name__ == "__main__":
+    # Save best confidence matrix
+    src_best_cm = r"D:\GitHubProjects\Terranum_repo\LandSlides\segformerlandslides\results\training\20251217_102843_50_epochs_Bern_v2_da\logs\confmats\values\confusion_matrix_ep_49.csv"
+    IMG_DIR = r"D:\GitHubProjects\Terranum_repo\LandSlides\segformerlandslides\results\training\20251217_102843_50_epochs_Bern_v2_da\images"
+    if os.path.exists(src_best_cm):
+        conf_mat = pd.read_csv(src_best_cm, sep=';', index_col=0).values
+        sum_for_recall = np.sum(conf_mat, axis=1).reshape(-1, 1)
+        sum_for_precision = np.sum(conf_mat, axis=0).reshape(1, -1)
+        show_confusion_matrix(os.path.join(IMG_DIR, 'confusion_matrix.png'), conf_mat, ['Background', 'Landslide'])
+        show_confusion_matrix(os.path.join(IMG_DIR, 'confusion_matrix_recall.png'), conf_mat / sum_for_recall, ['Background', 'Landslide'], "Confusion Matrix - Producer accuracy")
+        show_confusion_matrix(os.path.join(IMG_DIR, 'confusion_matrix_precision.png'), conf_mat / sum_for_precision, ['Background', 'Landslide'], "Confusion Matrix - User accuracy")
+    else:
+        print("CONFMAT NOT CREATED FOR BEST EPOCH")
+        print("following does not exist:")
+        print(src_best_cm)
+    quit()
     # src = r"D:\GitHubProjects\Terranum_repo\LandSlides\segformerlandslides\results\training\20251215_080906_50_epochs_Bern_from_scratch\last_checkpoint"
 
     # # Path to trainer_state.json

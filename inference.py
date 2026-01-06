@@ -29,12 +29,14 @@ def load_latest_checkpoint(model_dir):
     return os.path.join(model_dir, last_ckpt)
 
 
-def predict_image(model, processor, image_path, device="cuda"):
+def predict_image(model, processor, image, device="cuda"):
     """
     Runs inference on a single image and returns:
     - predicted_mask (H, W) with class indices
     """
-    image = Image.open(image_path).convert("RGB")
+    # test if image is a path or already an Image.Image object
+    if not isinstance(image, Image.Image):
+        image = Image.open(image).convert("RGB")
     width, height = image.size
 
     # Preprocess
@@ -53,7 +55,7 @@ def predict_image(model, processor, image_path, device="cuda"):
     )
 
     pred_mask = upsampled_logits.argmax(dim=1)[0].cpu().numpy()
-    return pred_mask
+    return pred_mask, upsampled_logits
 
 
 def run_inference(conf):
@@ -99,7 +101,7 @@ def run_inference(conf):
         input_path = os.path.join(DATA_DIR, img_name)
         output_path = os.path.join(OUTPUT_DIR, ''.join(img_name.split('.')[:-1]) + ".tif")
 
-        mask = predict_image(model, processor, input_path, device=DEVICE)
+        mask, preds = predict_image(model, processor, input_path, device=DEVICE)
         pil_mask = Image.fromarray(mask.astype(np.uint8))
         pil_mask.save(output_path)
 
@@ -114,5 +116,3 @@ if __name__ == "__main__":
     conf = OmegaConf.load('config/inference.yaml')
 
     run_inference(conf)
-
-

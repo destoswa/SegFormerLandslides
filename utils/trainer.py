@@ -1,8 +1,12 @@
 import torch
 import numpy as np
+from math import prod
 import time
+from tqdm import tqdm
 from transformers import Trainer
 from torch.utils.data import default_collate
+from torch.utils.data import Subset
+import torch.nn.functional as F
 
 from .metrics import compute_metrics, compute_cm_from_dict
 
@@ -26,16 +30,43 @@ def collate_with_filename(batch):
     return batch_collated
 
 
+def dice_loss(logits, targets, eps=1e-6):
+    probs = torch.softmax(logits, dim=1)
+    targets_onehot = F.one_hot(targets, num_classes=logits.shape[1]).permute(0, 3, 1, 2)
+
+    intersection = (probs * targets_onehot).sum(dim=(2, 3))
+    union = probs.sum(dim=(2, 3)) + targets_onehot.sum(dim=(2, 3))
+
+    dice = (2 * intersection + eps) / (union + eps)
+    return 1 - dice.mean()
+
+
 class TrainValMetricsTrainer(Trainer):
     def __init__(self, confmat_dir, confmat_buffer_size=1000, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Buffers for storing batch results during an epoch
         self.training_metrics = []
         self.training_losses = []
         self.confmat_dir = confmat_dir
         self.confmat = np.zeros((2,2), dtype=np.uint64)
         self.eval_preds = {}
+
+        # compute weights for loss
+        dataset = self.train_dataset.dataset if isinstance(self.train_dataset, Subset) else self.train_dataset
+        count_ls = 0
+        count_bck = 0
+        print("Computing weights...")
+        for samp_id in tqdm(range(len(dataset)), total=len(dataset)):
+            inputs = dataset[samp_id]
+            labels = inputs['labels']
+            count_ls += torch.sum(labels == 1)
+            count_bck += torch.sum(labels == 0)
+        
+        tot = count_ls + count_bck
+        self.class_weights = torch.Tensor([tot/count_bck, tot/count_ls]).to('cuda:0')
+        print(f"Weights:\n\tBackground: {self.class_weights[0]}\n\tLandslide: {self.class_weights[1]}")
+
 
     @staticmethod
     def logits_to_preds(logits, height=512, width=512):
@@ -68,8 +99,8 @@ class TrainValMetricsTrainer(Trainer):
 
         # Save them for end-of-epoch metrics
         dict_for_metrics = {'predictions': logits, "label_ids": labels}
-        dict_conf_mat = {x: (preds[x,...], labels[x,...]) for x in range(preds.shape[0])}
-        self.confmat += compute_cm_from_dict(dict_conf_mat)
+        # dict_conf_mat = {x: (preds[x,...], labels[x,...]) for x in range(preds.shape[0])}
+        # self.confmat += compute_cm_from_dict(dict_conf_mat)
 
         metrics = compute_metrics(dict_for_metrics)
         self.training_metrics.append(metrics)
@@ -176,6 +207,9 @@ class TrainValMetricsTrainer(Trainer):
             preds = self.logits_to_preds(logits)
             for sample_id in range(preds.shape[0]):
                 self.eval_preds[filenames[sample_id]] = preds[sample_id, ...]
+            labels = labels.cpu().detach().clone()
+            dict_conf_mat = {x: (preds[x,...], labels[x,...]) for x in range(preds.shape[0])}
+            self.confmat += compute_cm_from_dict(dict_conf_mat)
                 
             # -----------------------------
             # -----------------------------
@@ -299,7 +333,34 @@ class TrainValMetricsTrainer(Trainer):
 
         return EvalLoopOutput(predictions=all_preds, label_ids=all_labels, metrics=metrics, num_samples=num_samples)
 
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        labels = inputs.pop("labels")
+
+        outputs = model(**inputs)
+        logits = outputs.logits  # (B, C, H, W)
+
+        # Resize logits to match labels
+        logits = torch.nn.functional.interpolate(
+            logits,
+            size=labels.shape[-2:],
+            mode="bilinear",
+            align_corners=False
+        )
+
+        ce_loss = F.cross_entropy(
+            logits,
+            labels,
+            weight=self.class_weights,
+            ignore_index=255  # very important for segmentation
+        )
+
+        d_loss = dice_loss(logits, labels)
+
+        loss = ce_loss + 0.5 * d_loss
+
+        return (loss, outputs) if return_outputs else loss
     
+
 if __name__ == "__main__":
     print("WRONG SCRIPT PAL")
 

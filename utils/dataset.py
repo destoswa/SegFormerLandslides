@@ -10,7 +10,6 @@ class SegmentationDataset(Dataset):
         self.mask_dir = mask_dir
         self.processor = processor
         self.transform = transform
-        self.name = "derp"
 
         self.images = sorted(os.listdir(image_dir))
         self.masks  = sorted(os.listdir(mask_dir))
