@@ -207,8 +207,8 @@ class TrainValMetricsTrainer(Trainer):
             preds = self.logits_to_preds(logits)
             for sample_id in range(preds.shape[0]):
                 self.eval_preds[filenames[sample_id]] = preds[sample_id, ...]
-            labels = labels.cpu().detach().clone()
-            dict_conf_mat = {x: (preds[x,...], labels[x,...]) for x in range(preds.shape[0])}
+            labels_cpu = labels.cpu().detach().clone()
+            dict_conf_mat = {x: (preds[x,...], labels_cpu[x,...]) for x in range(preds.shape[0])}
             self.confmat += compute_cm_from_dict(dict_conf_mat)
                 
             # -----------------------------
