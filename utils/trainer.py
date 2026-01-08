@@ -41,6 +41,43 @@ def dice_loss(logits, targets, eps=1e-6):
     return 1 - dice.mean()
 
 
+def focal_loss(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    alpha: float = 0.25,
+    gamma: float = 2.0,
+    ignore_index: int = 255,
+):
+    """
+    logits: (B, 2, H, W)
+    targets: (B, H, W)
+    """
+
+    # 1) Convert logits into probabilities (softmax)
+    probs = torch.softmax(logits, dim=1)
+
+    # 2) Pick probability of the class actually present
+    targets_expanded = F.one_hot(targets, num_classes=2).permute(0, 3, 1, 2)
+
+    p_t = (probs * targets_expanded).sum(dim=1) + 1e-8
+
+    # 3) Focal term
+    focal_term = (1 - p_t) ** gamma
+
+    # 4) Cross entropy on probabilities
+    ce_loss = - torch.log(p_t)
+
+    # 5) Apply alpha weighting
+    loss = alpha * focal_term * ce_loss
+
+    # 6) Mask ignored pixels
+    if ignore_index is not None:
+        mask = (targets != ignore_index).float()
+        loss = loss * mask
+
+    return loss.mean()
+
+
 class TrainValMetricsTrainer(Trainer):
     def __init__(self, confmat_dir, confmat_buffer_size=1000, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -353,10 +390,14 @@ class TrainValMetricsTrainer(Trainer):
             weight=self.class_weights,
             ignore_index=255  # very important for segmentation
         )
+        f_loss = focal_loss(logits, labels)
 
         d_loss = dice_loss(logits, labels)
-
-        loss = ce_loss + 0.5 * d_loss
+        # print("Weighted CE loss: ", ce_loss)
+        # print("Dice loss: ", d_loss)
+        # print("Focal loss: ", f_loss)
+        # loss = ce_loss + 0.5 * d_loss
+        loss = f_loss + 0.5 * d_loss
 
         return (loss, outputs) if return_outputs else loss
     

@@ -1,8 +1,9 @@
 output_dir: "results/training"
-output_suffixe: Longxi_Bern_v2_da_weighted_dice_loss
-# output_suffixe: Bern_and_Longxi_b0
+output_suffixe: Longxi_Bern_v2_focal_dice_losses
+# output_suffixe: test
+# output_suffixe: Bern_v2_focal_dice_losses
 val_split: 0.1
-num_epochs: 10
+num_epochs: 50
 batch_size: 8
 num_workers: 2
 learning_rate: 5e-5
